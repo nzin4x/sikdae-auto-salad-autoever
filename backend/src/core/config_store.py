@@ -84,6 +84,48 @@ class ConfigStore:
     def count_users(self) -> int:
         return len(self._scan_config_items())
 
+    def get_stats(self, exclusion_dates_from: Optional[str] = None) -> Dict[str, Any]:
+        """가벼운 공개 통계 — DynamoDB 스캔 1회로 계산, Mealc API는 호출하지 않는다.
+
+        exclusion_dates_from(YYYY-MM-DD) 이후의 제외일만 집계한다(지난 날짜는 참고 의미가 없어 제외).
+        회원별 제외일은 이메일 없이 날짜별 인원수만 반환해 완전히 익명화한다.
+        """
+        items = self._scan_config_items()
+        total = len(items)
+        active = sum(1 for i in items if i.get("isActive", True))
+        with_history = sum(1 for i in items if i.get("lastReservedDate"))
+
+        menu_counter: Dict[str, int] = {}
+        spot_counter: Dict[str, int] = {}
+        exclusion_counter: Dict[str, int] = {}
+        for item in items:
+            prefs = item.get("menuPreference") or []
+            if prefs:
+                menu_counter[prefs[0]] = menu_counter.get(prefs[0], 0) + 1
+            spot = item.get("deliverySpotKeyword")
+            if spot:
+                spot_counter[spot] = spot_counter.get(spot, 0) + 1
+            for excl_date in item.get("exclusionDates", []):
+                if exclusion_dates_from and excl_date < exclusion_dates_from:
+                    continue
+                exclusion_counter[excl_date] = exclusion_counter.get(excl_date, 0) + 1
+
+        top_menu = max(menu_counter, key=menu_counter.get) if menu_counter else None
+        top_spot = max(spot_counter, key=spot_counter.get) if spot_counter else None
+        common_exclusion_dates = [
+            {"date": d, "count": c} for d, c in sorted(exclusion_counter.items())
+        ]
+
+        return {
+            "totalUsers": total,
+            "activeUsers": active,
+            "inactiveUsers": total - active,
+            "usersWithReservationHistory": with_history,
+            "topMenuPreference": top_menu,
+            "topDeliverySpot": top_spot,
+            "commonExclusionDates": common_exclusion_dates,
+        }
+
     def update_auto_reservation_status(self, email: str, enabled: bool) -> None:
         self._update_config(email, "SET isActive = :v", {":v": enabled})
 

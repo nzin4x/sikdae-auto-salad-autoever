@@ -80,4 +80,12 @@ class HolidayService:
             result_msg = root.findtext(".//resultMsg") or "Unknown error"
             raise RuntimeError(f"Holiday API error {result_code}: {result_msg}")
 
-        return {node.text for node in root.findall(".//item/locdate") if node.text}
+        # data.go.kr는 실제 쉬는 공휴일뿐 아니라 제헌절처럼 쉬지 않는 "기념일"도 같이 내려준다.
+        # isHoliday == 'Y'인 것만 실제 공휴일로 취급해야 한다(아니면 평일인데 건너뛰는 버그가 생김).
+        holidays = set()
+        for item in root.findall(".//item"):
+            locdate = item.findtext("locdate")
+            is_holiday = item.findtext("isHoliday")
+            if locdate and is_holiday == "Y":
+                holidays.add(locdate)
+        return holidays

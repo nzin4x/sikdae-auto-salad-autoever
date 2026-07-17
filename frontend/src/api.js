@@ -34,4 +34,5 @@ export const api = {
   makeImmediateReservation: (email) =>
     request('/reservation/make-immediate', { method: 'POST', body: JSON.stringify({ email }) }),
   cancelReservation: (email) => request('/reservation/cancel', { method: 'POST', body: JSON.stringify({ email }) }),
+  getStats: () => request('/stats'),
 }

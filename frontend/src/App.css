@@ -52,6 +52,45 @@ body {
   text-decoration: underline;
 }
 
+.footer-divider {
+  color: var(--border);
+  margin: 0 8px;
+  font-size: 12px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 12px 0 20px;
+}
+
+.stat-tile {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 10px;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--primary-dark);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.chip-neutral {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
 .app-subtitle {
   text-align: center;
   color: var(--muted);

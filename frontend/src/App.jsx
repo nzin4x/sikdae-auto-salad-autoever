@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import Register from './Register'
 import Dashboard from './Dashboard'
+import Stats from './Stats'
 import './App.css'
 
 function getDeviceFingerprint() {
@@ -19,6 +20,7 @@ export default function App() {
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showStats, setShowStats] = useState(false)
   const fingerprint = getDeviceFingerprint()
 
   useEffect(() => {
@@ -115,9 +117,13 @@ export default function App() {
 
       <footer className="app-footer">
         <a href="https://github.com/nzin4x/sikdae-auto-salad-autoever" target="_blank" rel="noopener noreferrer">
-          🐙 GitHub에서 소스코드 보기
+          🐙 GitHub
         </a>
+        <span className="footer-divider">·</span>
+        <a href="#" onClick={(e) => { e.preventDefault(); setShowStats(true) }}>📊 Stat</a>
       </footer>
+
+      {showStats && <Stats onClose={() => setShowStats(false)} />}
     </div>
   )
 }

@@ -140,6 +140,9 @@ Resources:
         UpdateHolidays:
           Type: Api
           Properties: { Path: /admin/update-holidays, Method: POST }
+        GetStats:
+          Type: Api
+          Properties: { Path: /stats, Method: GET }
 
   WorkerFunction:
     Type: AWS::Serverless::Function
