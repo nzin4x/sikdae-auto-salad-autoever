@@ -85,7 +85,7 @@ export default function App() {
 
   return (
     <div className="container">
-      <div className="app-title">🍱 sikdae-auto</div>
+      <div className="app-title">🍱 식대오토샐러드</div>
       <div className="app-subtitle">식권대장 자동예약 도우미</div>
       {error && <p className="error">⚠️ {error}</p>}
 
@@ -112,6 +112,12 @@ export default function App() {
       )}
 
       {stage === 'dashboard' && <Dashboard email={email} onLogout={handleLogout} />}
+
+      <footer className="app-footer">
+        <a href="https://github.com/nzin4x/sikdae-auto-salad-autoever" target="_blank" rel="noopener noreferrer">
+          🐙 GitHub에서 소스코드 보기
+        </a>
+      </footer>
     </div>
   )
 }

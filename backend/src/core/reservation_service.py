@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 import pytz
 
+from .branding import PAGE_URL
 from .config_store import ConfigStore
 from .holiday_service import HolidayService
 from .mealc_client import MealcClient
@@ -156,7 +157,7 @@ class ReservationService:
             return
         weekday_kr = ["월", "화", "수", "목", "금", "토", "일"][attempt.target_date.weekday()]
         status_str = "성공" if attempt.success else "실패"
-        subject = f"[sikdae-auto] {attempt.target_date.isoformat()}({weekday_kr}) 예약 {status_str}"
+        subject = f"[식대오토샐러드] {attempt.target_date.isoformat()}({weekday_kr}) 예약 {status_str}"
         body_lines = [
             f"예약 날짜: {attempt.target_date.isoformat()} ({weekday_kr})",
             f"결과: {status_str}",
@@ -165,5 +166,7 @@ class ReservationService:
             f"+ 식권대장 계정: {preferences.mealc_user_id}",
             f"+ 선호 메뉴: {', '.join(preferences.menu_preference) or '(미설정)'}",
             f"+ 배송지 키워드: {preferences.delivery_spot_keyword or '(미설정)'}",
+            "",
+            f"+ 예약 확인 및 설정: {PAGE_URL}",
         ]
         self.notifier.send(subject, "\n".join(body_lines), preferences.notification_emails)

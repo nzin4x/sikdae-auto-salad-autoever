@@ -15,14 +15,10 @@ import hashlib
 import hmac
 import json
 import os
-import secrets
-from typing import Tuple
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes, serialization
-
-MASTER_PASSWORD_PBKDF2_ITERATIONS = 200_000
 
 
 def _load_public_key(public_key_b64: str):
@@ -83,19 +79,3 @@ def encrypt(value: str) -> str:
 
 def decrypt(encrypted_value: str) -> str:
     return _get_fernet().decrypt(encrypted_value.encode("ascii")).decode("utf-8")
-
-
-def hash_master_password(password: str, salt_b64: str = None) -> Tuple[str, str]:
-    """마스터 패스워드는 평문/복호화 가능한 형태로 저장하지 않는다 — PBKDF2 해시만 저장한다.
-
-    분실 시 복구 수단이 없다(재가입해야 함). Worker(자동예약)는 이 값을 전혀 쓰지 않으며,
-    웹 UI에서 설정변경/탈퇴 같은 민감 액션을 할 때 재입력받아 이 해시와 비교하는 용도로만 쓰인다.
-    """
-    salt = base64.b64decode(salt_b64) if salt_b64 else secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, MASTER_PASSWORD_PBKDF2_ITERATIONS)
-    return base64.b64encode(digest).decode("ascii"), base64.b64encode(salt).decode("ascii")
-
-
-def verify_master_password(password: str, hash_b64: str, salt_b64: str) -> bool:
-    computed_hash, _ = hash_master_password(password, salt_b64)
-    return hmac.compare_digest(computed_hash, hash_b64)

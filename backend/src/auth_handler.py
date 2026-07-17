@@ -6,7 +6,7 @@ import logging
 import secrets
 from typing import Any, Dict
 
-from core import ConfigStore
+from core import PAGE_URL, ConfigStore
 from lambda_http import json_response as _response
 from lambda_http import parse_body as _parse_body
 
@@ -32,8 +32,8 @@ def send_verification_code_handler(event: Dict[str, Any], _context: Any) -> Dict
 
         notifier = SesNotifier()
         notifier.send(
-            "sikdae-auto 로그인 인증 코드",
-            f"인증 코드: {code}\n\n이 코드는 10분간 유효합니다.",
+            "[식대오토샐러드] 로그인 인증 코드",
+            f"인증 코드: {code}\n\n이 코드는 10분간 유효합니다.\n\n👉 {PAGE_URL}",
             [email],
         )
         LOGGER.info("Verification code sent to %s", email)

@@ -1,6 +1,9 @@
-# sikdae-auto
+# 🍱 식대오토샐러드 (sikdae-auto)
 
 식권대장(Mealc, `com.vlocally.mealc.android`) 자동예약 프로젝트.
+
+- 🌐 서비스: https://sikdae-auto-salad-autoever.pages.dev/
+- 💻 소스: https://github.com/nzin4x/sikdae-auto-salad-autoever
 
 기존 [hgreenfood-auto-salad](https://github.com/nzin4x/hgreenfood-auto-salad)는 웹 기반 사내 식당 예약 시스템을 자동화했으나,
 회사가 예약 시스템을 식권대장앱(Mealc)으로 교체하면서 동일한 아키텍처(Lambda + DynamoDB + EventBridge Scheduler + Cloudflare Pages)를 재구현했다.
@@ -9,7 +12,7 @@
 
 ## 구성
 
-- **`backend/`** — AWS SAM 앱. DynamoDB(단일 테이블) + Lambda(API/Worker/HolidayUpdater) + EventBridge Scheduler(평일 13:00 KST 자동예약, 매월 25일 공휴일 캐시 갱신). SES 이메일 인증 + 마스터 패스워드 기반 다중유저 회원가입.
+- **`backend/`** — AWS SAM 앱. DynamoDB(단일 테이블) + Lambda(API/Worker/HolidayUpdater) + EventBridge Scheduler(평일 13:00 KST 자동예약, 매월 25일 공휴일 캐시 갱신). SES 이메일 인증 기반 다중유저 회원가입(최대 `MAX_USERS`=10명, hgreenfood-auto-salad와 동일).
 - **`frontend/`** — Vite+React 모바일 대시보드. 예약 현황, 즉시예약, 취소, 설정(선호메뉴/배송지/제외일 캘린더/자동예약 토글), 회원탈퇴.
 - **`docs/api_notes.md`** — 역공학한 Mealc API 스펙(로그인 RSA 암호화, 예약 JWT 서명, 예약/취소 시퀀스 등).
 - **`docs/deployment.md`** — 배포 정보, 트러블슈팅, 실계정 검증 로그.
@@ -45,4 +48,4 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 sam deploy \
 
 - `.env`, `backend/.crypto-key.local`, `capture/` 하위 파일은 git에 커밋하지 않는다 (`.gitignore` 참고).
 - 실제 계정/비밀번호를 코드에 하드코딩하지 않는다.
-- 회원의 식권대장 비밀번호는 DynamoDB에 Fernet(`CRYPTO_KEY` Lambda 환경변수) 암호화로 저장된다. 마스터 패스워드는 이것과 별개로 PBKDF2 해시만 저장되며, 설정변경/탈퇴 같은 웹 UI 민감 액션 확인 용도로만 쓰인다(자동예약 복호화에는 관여하지 않음 — 그래야 사람 개입 없이 13시 자동예약이 가능함).
+- 회원의 식권대장 비밀번호는 DynamoDB에 Fernet(`CRYPTO_KEY` Lambda 환경변수) 암호화로 저장된다. 이 키를 가진 관리자는 언제든 복호화할 수 있다(사람 개입 없는 13시 자동예약을 위해 불가피한 구조) — 그래서 마스터 패스워드 같은 추가 인증 계층은 실질적 보안 이득이 없다고 판단해 없앴다. 대신 가입 시 "노출되어도 무방한 비밀번호로 식권대장 앱에서 변경 후 가입하라"고 명확히 안내한다.

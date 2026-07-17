@@ -32,8 +32,6 @@ class UserPreferences:
     email: str
     mealc_user_id: str
     mealc_password: str
-    master_password_hash: str  # PBKDF2 해시만 저장 — 평문/복호화형은 저장하지 않음
-    master_password_salt: str
     menu_preference: List[str] = field(default_factory=list)  # 메뉴 이름에 포함될 키워드 순서, 예: ["샌드위치", "샐러드"]
     delivery_spot_keyword: str = ""  # 예: "4층" — 배송지 목록에서 이 문자열이 포함된 spot 선택
     store_id: Optional[str] = None  # 미지정 시 BOOKING 지원 매장 자동 탐색

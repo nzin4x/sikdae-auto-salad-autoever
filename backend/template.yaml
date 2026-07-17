@@ -16,6 +16,10 @@ Parameters:
   MaxUsers:
     Type: Number
     Default: 10
+  PageUrl:
+    Type: String
+    Default: https://sikdae-auto-salad-autoever.pages.dev/
+    Description: Cloudflare Pages 프론트엔드 URL — 이메일 안내문에 사용.
   CryptoKey:
     Type: String
     NoEcho: true
@@ -35,6 +39,7 @@ Globals:
         DEFAULT_TIMEZONE: !Ref DefaultTimezone
         HOLIDAY_API_KEY: !Ref HolidayApiKey
         MAX_USERS: !Ref MaxUsers
+        PAGE_URL: !Ref PageUrl
         CRYPTO_KEY: !Ref CryptoKey
     Tracing: Active
   Api:

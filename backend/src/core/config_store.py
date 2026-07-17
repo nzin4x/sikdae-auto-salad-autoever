@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Set
 import boto3
 from botocore.exceptions import ClientError
 
-from .crypto import decrypt, encrypt, verify_master_password
+from .crypto import decrypt, encrypt
 from .models import UserPreferences
 
 LOGGER = logging.getLogger()
@@ -40,8 +40,6 @@ class ConfigStore:
             email=email,
             mealc_user_id=item["mealcUserId"],
             mealc_password=decrypt(item["mealcPasswordEncrypted"]),
-            master_password_hash=item["masterPasswordHash"],
-            master_password_salt=item["masterPasswordSalt"],
             menu_preference=list(item.get("menuPreference", [])),
             delivery_spot_keyword=item.get("deliverySpotKeyword", ""),
             store_id=item.get("storeId"),
@@ -58,8 +56,6 @@ class ConfigStore:
             "email": prefs.email,
             "mealcUserId": prefs.mealc_user_id,
             "mealcPasswordEncrypted": encrypt(prefs.mealc_password),
-            "masterPasswordHash": prefs.master_password_hash,
-            "masterPasswordSalt": prefs.master_password_salt,
             "menuPreference": prefs.menu_preference,
             "deliverySpotKeyword": prefs.delivery_spot_keyword,
             "exclusionDates": prefs.exclusion_dates,
@@ -77,12 +73,6 @@ class ConfigStore:
 
     def profile_exists(self, email: str) -> bool:
         return self._get_config_item(email) is not None
-
-    def verify_master_password(self, email: str, master_password: str) -> bool:
-        item = self._get_config_item(email)
-        if not item:
-            return False
-        return verify_master_password(master_password, item["masterPasswordHash"], item["masterPasswordSalt"])
 
     def list_active_users(self) -> List[str]:
         return [

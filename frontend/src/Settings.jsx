@@ -8,7 +8,6 @@ export default function Settings({ email, onClose, onSaved }) {
   const [mealcUserId, setMealcUserId] = useState('')
   const [mealcPassword, setMealcPassword] = useState('')
   const [exclusionDates, setExclusionDates] = useState([])
-  const [masterPassword, setMasterPassword] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -52,15 +51,10 @@ export default function Settings({ email, onClose, onSaved }) {
 
   async function handleSave() {
     setError('')
-    if (!masterPassword) {
-      setError('🔒 마스터 패스워드를 입력해야 저장할 수 있습니다.')
-      return
-    }
     setSaving(true)
     try {
       await api.updateSettings({
         email,
-        masterPassword,
         menuPreference,
         deliverySpotKeyword,
         mealcUserId: mealcUserId || undefined,
@@ -108,6 +102,9 @@ export default function Settings({ email, onClose, onSaved }) {
 
             <label>🔑 식권대장 비밀번호 변경 (선택)</label>
             <input type="password" value={mealcPassword} onChange={(e) => setMealcPassword(e.target.value)} placeholder="변경할 경우에만 입력" />
+            <p className="hint">
+              ⚠️ 서버 관리자는 암호화 키로 언제든 복호화할 수 있습니다. 노출되어도 무방한 비밀번호를 사용하세요.
+            </p>
 
             <label>📅 제외일 (휴가 등 예약 안 할 날 — 달력에서 날짜를 눌러 선택/해제)</label>
             <Calendar selectedDates={exclusionDates} onToggleDate={toggleExclusionDate} />
@@ -123,9 +120,6 @@ export default function Settings({ email, onClose, onSaved }) {
                 <span className="muted">선택된 제외일 없음</span>
               )}
             </div>
-
-            <label>🔒 마스터 패스워드 (저장하려면 필수)</label>
-            <input type="password" value={masterPassword} onChange={(e) => setMasterPassword(e.target.value)} required />
 
             <div className="row" style={{ marginTop: 16 }}>
               <button type="button" onClick={onClose} disabled={saving}>닫기</button>

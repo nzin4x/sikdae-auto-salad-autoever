@@ -34,6 +34,24 @@ body {
   margin: 8px 0 4px;
 }
 
+.app-footer {
+  text-align: center;
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.app-footer a {
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
 .app-subtitle {
   text-align: center;
   color: var(--muted);
