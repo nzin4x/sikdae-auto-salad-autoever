@@ -1,0 +1,48 @@
+# sikdae-auto
+
+식권대장(Mealc, `com.vlocally.mealc.android`) 자동예약 프로젝트.
+
+기존 [hgreenfood-auto-salad](https://github.com/nzin4x/hgreenfood-auto-salad)는 웹 기반 사내 식당 예약 시스템을 자동화했으나,
+회사가 예약 시스템을 식권대장앱(Mealc)으로 교체하면서 동일한 아키텍처(Lambda + DynamoDB + EventBridge Scheduler + Cloudflare Pages)를 재구현했다.
+
+식권대장앱(Mealc)은 네이티브 앱이라 브라우저 디버거로 API를 뽑을 수 없어, MuMu Player(Android 에뮬레이터, 루팅 가능) + mitmproxy로 HTTPS 트래픽을 캡처해 API를 역공학했다. Android 15의 APEX 인증서 저장소 때문에 시스템 CA 주입은 통하지 않아, Frida로 앱의 TrustManager를 직접 후킹해 우회했다.
+
+## 구성
+
+- **`backend/`** — AWS SAM 앱. DynamoDB(단일 테이블) + Lambda(API/Worker/HolidayUpdater) + EventBridge Scheduler(평일 13:00 KST 자동예약, 매월 25일 공휴일 캐시 갱신). SES 이메일 인증 + 마스터 패스워드 기반 다중유저 회원가입.
+- **`frontend/`** — Vite+React 모바일 대시보드. 예약 현황, 즉시예약, 취소, 설정(선호메뉴/배송지/제외일 캘린더/자동예약 토글), 회원탈퇴.
+- **`docs/api_notes.md`** — 역공학한 Mealc API 스펙(로그인 RSA 암호화, 예약 JWT 서명, 예약/취소 시퀀스 등).
+- **`docs/deployment.md`** — 배포 정보, 트러블슈팅, 실계정 검증 로그.
+- **`test/`** — 배포된 시스템을 거치지 않고 Mealc API를 직접 두드려보는 로컬 테스트. `test_*.py`는 조회/로그인만 하는 안전한 것들이라 `pytest`로 자동 수집해도 무방하고, `manual_prove_cancel_and_rebook.py`는 **실제 예약을 취소/재생성하는 상태변경 스크립트**라 일부러 `test_` 접두사를 빼서 pytest가 자동 실행하지 않게 했다 — 반드시 `python test/manual_prove_cancel_and_rebook.py`로 직접 실행할 것.
+- **`capture/`** — mitmproxy 캡처 파일 (gitignore, 민감정보 포함 가능).
+
+## 로컬 개발 환경 설정
+
+```bash
+cp .env.example .env   # MEALC_USER_ID / MEALC_PASSWORD / DATA_GO_KR_API_KEY 채우기
+pip install -r backend/src/requirements.txt python-dotenv pytest
+pytest test/            # 안전한 조회성 테스트만 실행
+python test/manual_prove_cancel_and_rebook.py   # 실제 취소/재예약 — 신중히 직접 실행
+```
+
+`.env`는 `test/*.py`가 Mealc API를 직접 호출해 테스트할 때만 쓰인다. **배포된 시스템 자체는 이 파일을 쓰지 않는다** — 회원가입 시 입력한 식권대장 계정정보는 DynamoDB에 암호화되어 저장되고, Lambda가 매일 13시에 그걸로 로그인해 자동예약한다.
+
+## 배포
+
+`backend/README` 대신 [`docs/deployment.md`](docs/deployment.md) 참고. 요약하면:
+
+```bash
+cd backend
+PYTHONUTF8=1 PYTHONIOENCODING=utf-8 sam build
+PYTHONUTF8=1 PYTHONIOENCODING=utf-8 sam deploy \
+  --stack-name sikdae-auto --s3-bucket <bucket> --capabilities CAPABILITY_IAM \
+  --parameter-overrides SesSenderEmail=<ses-sender> CryptoKey=$(cat backend/.crypto-key.local) HolidayApiKey=<data.go.kr-key>
+```
+
+프론트엔드는 `frontend/.env`의 `VITE_API_URL`을 배포된 API Gateway URL로 맞춘 뒤 Cloudflare Pages에 연결한다(Root directory: `frontend`).
+
+## 보안
+
+- `.env`, `backend/.crypto-key.local`, `capture/` 하위 파일은 git에 커밋하지 않는다 (`.gitignore` 참고).
+- 실제 계정/비밀번호를 코드에 하드코딩하지 않는다.
+- 회원의 식권대장 비밀번호는 DynamoDB에 Fernet(`CRYPTO_KEY` Lambda 환경변수) 암호화로 저장된다. 마스터 패스워드는 이것과 별개로 PBKDF2 해시만 저장되며, 설정변경/탈퇴 같은 웹 UI 민감 액션 확인 용도로만 쓰인다(자동예약 복호화에는 관여하지 않음 — 그래야 사람 개입 없이 13시 자동예약이 가능함).

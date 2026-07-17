@@ -1,0 +1,28 @@
+# 자격증명 / 개인 설정
+.env
+# frontend/.env는 API Gateway URL만 담고 있고(비밀값 아님, 어차피 Vite 빌드시 클라이언트 번들에 노출됨) 커밋 허용
+!frontend/.env
+
+# mitmproxy 캡처 (평문 자격증명/토큰 포함 가능)
+capture/*
+!capture/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# SAM build artifacts
+backend/.aws-sam/
+backend/samconfig.toml
+
+# Fernet 암호화 키 (재배포 시 반드시 동일 값 사용해야 함 — 바뀌면 기존 저장된 비밀번호 복호화 불가)
+backend/.crypto-key.local
+
+# Node (frontend, 이후 라운드)
+node_modules/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,200 @@
+Transform: AWS::Serverless-2016-10-31
+Description: AWS Serverless stack for sikdae-auto (식권대장 자동예약)
+
+Parameters:
+  SesSenderEmail:
+    Type: String
+    Default: ""
+    Description: Verified SES email address used as the sender.
+  DefaultTimezone:
+    Type: String
+    Default: Asia/Seoul
+  HolidayApiKey:
+    Type: String
+    Default: ""
+    Description: data.go.kr API key for holiday information service.
+  MaxUsers:
+    Type: Number
+    Default: 10
+  CryptoKey:
+    Type: String
+    NoEcho: true
+    Description: Fernet key (Fernet.generate_key()) used to encrypt stored Mealc passwords. CloudFormation은 Lambda 환경변수에 SSM SecureString 동적참조를 지원하지 않으므로 배포 시 --parameter-overrides로 직접 주입한다.
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Timeout: 30
+    MemorySize: 512
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        CONFIG_TABLE_NAME: !Ref SikdaeAutoTable
+        SES_SENDER_EMAIL: !Ref SesSenderEmail
+        DEFAULT_TIMEZONE: !Ref DefaultTimezone
+        HOLIDAY_API_KEY: !Ref HolidayApiKey
+        MAX_USERS: !Ref MaxUsers
+        CRYPTO_KEY: !Ref CryptoKey
+    Tracing: Active
+  Api:
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+
+Resources:
+  SikdaeAutoTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: SikdaeAutoReserve
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sikdae-auto-api
+      CodeUri: src/
+      Handler: app.api_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SikdaeAutoTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: "*"
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowMethods: ["*"]
+          AllowHeaders: ["*"]
+          AllowOrigins: ["*"]
+      Events:
+        Register:
+          Type: Api
+          Properties: { Path: /register, Method: POST }
+        RegisterStatus:
+          Type: Api
+          Properties: { Path: /register/status, Method: GET }
+        CheckReservation:
+          Type: Api
+          Properties: { Path: /check-reservation, Method: POST }
+        ListReservations:
+          Type: Api
+          Properties: { Path: /reservations, Method: POST }
+        SendCode:
+          Type: Api
+          Properties: { Path: /auth/send-code, Method: POST }
+        VerifyCode:
+          Type: Api
+          Properties: { Path: /auth/verify-code, Method: POST }
+        CheckDevice:
+          Type: Api
+          Properties: { Path: /auth/check-device, Method: POST }
+        Logout:
+          Type: Api
+          Properties: { Path: /auth/logout, Method: POST }
+        ToggleAutoReservation:
+          Type: Api
+          Properties: { Path: /user/toggle-auto-reservation, Method: POST }
+        DeleteAccount:
+          Type: Api
+          Properties: { Path: /user/delete-account, Method: POST }
+        GetUserSettings:
+          Type: Api
+          Properties: { Path: /user/get-settings, Method: GET }
+        UpdateUserSettings:
+          Type: Api
+          Properties: { Path: /user/update-settings, Method: POST }
+        UpdateExclusionDates:
+          Type: Api
+          Properties: { Path: /user/update-exclusion-dates, Method: POST }
+        MakeImmediateReservation:
+          Type: Api
+          Properties: { Path: /reservation/make-immediate, Method: POST }
+        CancelReservation:
+          Type: Api
+          Properties: { Path: /reservation/cancel, Method: POST }
+        UpdateHolidays:
+          Type: Api
+          Properties: { Path: /admin/update-holidays, Method: POST }
+
+  WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sikdae-auto-worker
+      CodeUri: src/
+      Handler: app.worker_handler
+      Timeout: 300
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SikdaeAutoTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: "*"
+      Events:
+        WeekdaySchedule:
+          Type: ScheduleV2
+          Properties:
+            Name: sikdae-auto-worker-weekday
+            Description: 평일 13:00 KST에 전 회원 예약 시도 (EventBridge Scheduler)
+            ScheduleExpression: cron(0 13 ? * MON-FRI *)
+            ScheduleExpressionTimezone: Asia/Seoul
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            State: ENABLED
+
+  HolidayUpdaterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sikdae-auto-holiday-updater
+      CodeUri: src/
+      Handler: app.holiday_scheduler_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SikdaeAutoTable
+      Events:
+        MonthlySchedule:
+          Type: ScheduleV2
+          Properties:
+            Name: sikdae-auto-holiday-monthly
+            Description: 매월 25일 10:00 KST에 다음달 공휴일 캐시 갱신
+            ScheduleExpression: cron(0 10 25 * ? *)
+            ScheduleExpressionTimezone: Asia/Seoul
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            State: ENABLED
+
+Outputs:
+  ApiFunctionUrl:
+    Description: Function URL for API Lambda
+    Value: !GetAtt ApiFunctionUrl.FunctionUrl
+  ApiGatewayUrl:
+    Description: API Gateway URL
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  DynamoTableName:
+    Description: DynamoDB table name
+    Value: !Ref SikdaeAutoTable
+  WorkerFunctionArn:
+    Description: ARN of worker Lambda function
+    Value: !GetAtt WorkerFunction.Arn
