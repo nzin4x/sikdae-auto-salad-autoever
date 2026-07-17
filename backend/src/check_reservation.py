@@ -14,7 +14,7 @@ from typing import Any, Dict
 
 import pytz
 
-from core import ConfigStore, HolidayService, MealcClient
+from core import ConfigStore, HolidayService, MealcClient, regular_menu_contents
 from lambda_http import json_response as _response
 from lambda_http import parse_body as _parse_body
 
@@ -63,7 +63,7 @@ def check_reservation_handler(event: Dict[str, Any], _context: Any) -> Dict[str,
         reservations = []
         for candidate in candidates:
             menu_response = client.get_store_menu(store_id, candidate.strftime("%Y-%m-%d"))
-            contents = (menu_response.get("menus") or [{}])[0].get("contents", [])
+            contents = regular_menu_contents(menu_response)
             booked_menus = [item["name"] for item in contents if item.get("booking", {}).get("isBooked")]
             if booked_menus:
                 if candidate == today:

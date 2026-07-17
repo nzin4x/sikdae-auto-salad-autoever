@@ -16,6 +16,24 @@ from .models import ReservationAttempt, UserPreferences
 from .ses_notifier import SesNotifier
 
 
+def regular_menu_contents(menu_response: Dict[str, Any]) -> list:
+    """get_store_menu 응답에서 '일반(점심)' 카테고리 섹션의 메뉴 목록만 골라낸다.
+
+    Mealc은 하루 메뉴를 카테고리 섹션 배열(`menus`)로 내려주는데, 특식/이벤트(예: 케이크)가
+    별도 섹션으로 함께 올 수 있다. 특식 예약 여부가 일반 점심 예약을 막지 않도록,
+    카테고리명에 "점심"이 포함된 섹션을 일반 메뉴로 간주한다(섹션이 하나뿐이면 그걸 사용).
+    reservation_service와 check_reservation 핸들러가 동일한 기준을 쓰도록 공용 함수로 둔다.
+    """
+    menu_sections = menu_response.get("menus", [])
+    if not menu_sections:
+        return []
+    regular_section = next(
+        (s for s in menu_sections if "점심" in s.get("category", {}).get("name", "")),
+        menu_sections[0],
+    )
+    return regular_section.get("contents", [])
+
+
 class ReservationService:
     def __init__(
         self,
@@ -62,14 +80,15 @@ class ReservationService:
 
         date_str = target_date.strftime("%Y-%m-%d")
         menu_response = client.get_store_menu(store_id, date_str)
-        menu_sections = menu_response.get("menus", [])
-        contents = menu_sections[0]["contents"] if menu_sections else []
+        contents = regular_menu_contents(menu_response)
 
         if not contents:
             attempt = ReservationAttempt(False, f"{date_str} 메뉴 없음", target_date)
             self._notify(preferences, attempt)
             return attempt
 
+        # 특식/이벤트 메뉴(별도 카테고리 섹션)는 여기서 제외된다 — 특식만 예약되어 있어도
+        # 일반(점심) 메뉴는 별도의 추가 예약으로 취급해 정상 진행해야 한다(hgreenfood-auto-salad 원본과 동일한 정책).
         if any(item.get("booking", {}).get("isBooked") for item in contents):
             attempt = ReservationAttempt(True, "이미 예약되어 있음", target_date, details={"alreadyBooked": True})
             self._notify(preferences, attempt)
