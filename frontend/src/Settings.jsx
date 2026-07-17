@@ -93,6 +93,9 @@ export default function Settings({ email, onClose, onSaved }) {
               {menuPreference.length === 0 && <li className="muted">등록된 선호 메뉴 없음</li>}
             </ul>
             <AddMenuInput onAdd={addMenu} />
+            <p className="hint">
+              💡 선호 메뉴 순서대로 이름에 포함된 메뉴를 찾아 예약을 시도합니다. 케이크 등의 특식에는 적용되지 않습니다.
+            </p>
 
             <label>📍 배송지 키워드</label>
             <input value={deliverySpotKeyword} onChange={(e) => setDeliverySpotKeyword(e.target.value)} placeholder="예: 4층" />
@@ -104,6 +107,7 @@ export default function Settings({ email, onClose, onSaved }) {
             <input type="password" value={mealcPassword} onChange={(e) => setMealcPassword(e.target.value)} placeholder="변경할 경우에만 입력" />
             <p className="hint">
               ⚠️ 서버 관리자는 암호화 키로 언제든 복호화할 수 있습니다. 노출되어도 무방한 비밀번호를 사용하세요.
+              <br />⚠️ 자동 예약이 실행될 시, 기존 식권대장 앱의 로그인 세션은 비활성화됩니다.
             </p>
 
             <label>📅 제외일 (휴가 등 예약 안 할 날 — 달력에서 날짜를 눌러 선택/해제)</label>
