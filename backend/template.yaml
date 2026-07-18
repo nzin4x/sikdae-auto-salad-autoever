@@ -150,7 +150,7 @@ Resources:
       FunctionName: sikdae-auto-worker
       CodeUri: src/
       Handler: app.worker_handler
-      Timeout: 300
+      Timeout: 900 # Lambda 실행시간 하드캡(15분) — 지수 백오프 재시도가 이 안에서 끝나야 함
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SikdaeAutoTable

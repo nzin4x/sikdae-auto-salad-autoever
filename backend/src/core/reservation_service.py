@@ -47,7 +47,12 @@ class ReservationService:
         self.notifier = notifier
         self.timezone = timezone
 
-    def run(self, email: str, service_date: Optional[date] = None) -> ReservationAttempt:
+    def run(
+        self,
+        email: str,
+        service_date: Optional[date] = None,
+        notify_on_retryable_failure: bool = True,
+    ) -> ReservationAttempt:
         preferences = self.config_store.get_user_preferences(email)
         tz = pytz.timezone(self.timezone)
         holiday_api_key = os.environ.get("HOLIDAY_API_KEY")
@@ -68,14 +73,16 @@ class ReservationService:
         # 다른 기기에서 로그인하면 기존 세션이 끊기는 것으로 확인됨 → 매번 새로 로그인한다.
         login_result = client.login(preferences.mealc_user_id, preferences.mealc_password)
         if not login_result.success:
-            attempt = ReservationAttempt(False, f"로그인 실패: {login_result.message}", target_date)
-            self._notify(preferences, attempt)
+            attempt = ReservationAttempt(False, f"로그인 실패: {login_result.message}", target_date, retryable=True)
+            if notify_on_retryable_failure:
+                self._notify(preferences, attempt)
             return attempt
 
         store_id = preferences.store_id or client.find_booking_store_id()
         if not store_id:
-            attempt = ReservationAttempt(False, "배달식사 매장을 찾지 못함", target_date)
-            self._notify(preferences, attempt)
+            attempt = ReservationAttempt(False, "배달식사 매장을 찾지 못함", target_date, retryable=True)
+            if notify_on_retryable_failure:
+                self._notify(preferences, attempt)
             return attempt
 
         date_str = target_date.strftime("%Y-%m-%d")
@@ -83,8 +90,10 @@ class ReservationService:
         contents = regular_menu_contents(menu_response)
 
         if not contents:
-            attempt = ReservationAttempt(False, f"{date_str} 메뉴 없음", target_date)
-            self._notify(preferences, attempt)
+            # 정각 직후엔 당일 메뉴가 아직 게시되지 않은 경우가 있어 재시도 대상으로 취급한다.
+            attempt = ReservationAttempt(False, f"{date_str} 메뉴 없음", target_date, retryable=True)
+            if notify_on_retryable_failure:
+                self._notify(preferences, attempt)
             return attempt
 
         # 특식/이벤트 메뉴(별도 카테고리 섹션)는 여기서 제외된다 — 특식만 예약되어 있어도
@@ -118,6 +127,11 @@ class ReservationService:
         )
         self._notify(preferences, attempt)
         return attempt
+
+    def notify_final_outcome(self, email: str, attempt: ReservationAttempt) -> None:
+        """재시도(라운드)를 모두 소진한 뒤 최종 결과를 통지한다 — worker가 사용."""
+        preferences = self.config_store.get_user_preferences(email)
+        self._notify(preferences, attempt)
 
     def _try_book(self, client: MealcClient, store_id: str, matched: Dict[str, Any], preferences: UserPreferences):
         from .models import ApiCallResult

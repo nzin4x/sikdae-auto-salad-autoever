@@ -48,3 +48,7 @@ class ReservationAttempt:
     target_date: date
     attempted_menus: List[str] = field(default_factory=list)
     details: Dict[str, Any] = field(default_factory=dict)
+    # True면 "서버가 아직 준비 안 됨" 류의 일시적 실패 — worker가 재시도 대상으로 취급한다.
+    # (공휴일/제외일 스킵, 이미예약, 키워드 불일치, 실제 예약 거부 응답 등은 재시도해도 결과가
+    # 바뀌지 않으므로 기본값 False로 둔다.)
+    retryable: bool = False

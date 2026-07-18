@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import date
 from typing import Any, Dict
 
@@ -15,6 +16,11 @@ LOGGER = logging.getLogger()
 if not LOGGER.handlers:
     logging.basicConfig(level=logging.INFO)
 LOGGER.setLevel(logging.INFO)
+
+# Lambda의 실행시간 하드캡은 900초(15분) — 아무리 Timeout을 늘려도 이 이상은 못 돈다.
+# 마지막 라운드의 실제 처리시간 + 알림 발송 여유를 남기기 위해 재시도 예산은 그보다 짧게 잡는다.
+WORKER_MAX_ELAPSED_SECONDS = 840  # 14분
+WORKER_INITIAL_DELAY_SECONDS = 1
 
 
 def api_handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
@@ -54,25 +60,73 @@ def api_handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
 
 
 def worker_handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
-    """EventBridge Scheduler(평일 13:00 KST)가 호출 — 활성 회원 전원에 대해 예약 시도."""
+    """EventBridge Scheduler(평일 13:00 KST)가 호출 — 활성 회원 전원에 대해 예약 시도.
+
+    정각 직후엔 Mealc 서버(당일 메뉴 게시 등)가 아직 준비되지 않아 실패하는 경우가 있어,
+    전체 회원을 한 라운드로 묶어 1s, 2s, 4s, 8s, ... 로 대기시간을 지수 증가시키며
+    재시도 가능한(retryable) 실패만 다음 라운드에 다시 시도한다. 대기시간은 회원별이
+    아니라 전체가 공유하므로, 회원 수가 늘어도 총 소요시간이 곱해지지 않는다.
+    Lambda 실행시간 하드캡(15분)을 넘지 않도록 WORKER_MAX_ELAPSED_SECONDS로 예산을 제한한다.
+    """
     LOGGER.info("=== WORKER HANDLER STARTED ===")
     service = _build_service()
     emails = service.config_store.list_active_users()
     LOGGER.info("Processing %d active users", len(emails))
 
-    results = []
-    for idx, email in enumerate(emails, 1):
-        LOGGER.info("[%d/%d] Processing %s", idx, len(emails), email)
-        try:
-            outcome = service.run(email=email)
-            results.append(
-                {"email": email, "success": outcome.success, "message": outcome.message, "targetDate": outcome.target_date.isoformat()}
-            )
-        except Exception as error:  # pylint: disable=broad-except
-            LOGGER.exception("Reservation attempt failed for %s", email)
-            results.append({"email": email, "success": False, "message": str(error)})
+    outcomes: Dict[str, Any] = {}
+    pending = list(emails)
+    delay = WORKER_INITIAL_DELAY_SECONDS
+    start = time.monotonic()
+    round_num = 0
 
-    LOGGER.info("Worker completed: %s", results)
+    while pending:
+        round_num += 1
+        LOGGER.info("Round %d: %d user(s) pending", round_num, len(pending))
+        still_pending = []
+        for email in pending:
+            try:
+                outcome = service.run(email=email, notify_on_retryable_failure=False)
+                outcomes[email] = outcome
+                if outcome.retryable:
+                    still_pending.append(email)
+            except Exception:  # pylint: disable=broad-except
+                LOGGER.exception("Reservation attempt failed for %s", email)
+                still_pending.append(email)
+        pending = still_pending
+
+        if not pending:
+            break
+
+        remaining_budget = WORKER_MAX_ELAPSED_SECONDS - (time.monotonic() - start)
+        if remaining_budget <= 0:
+            LOGGER.warning("Retry budget exhausted with %d user(s) still pending", len(pending))
+            break
+
+        sleep_for = min(delay, remaining_budget)
+        LOGGER.info("Retrying %d user(s) after %.0fs", len(pending), sleep_for)
+        time.sleep(sleep_for)
+        delay *= 2
+
+    # 예산을 다 쓰고도 재시도 대상으로 남은 회원에게는 최종 실패를 통지한다.
+    for email in pending:
+        outcome = outcomes.get(email)
+        if outcome is not None:
+            try:
+                service.notify_final_outcome(email, outcome)
+            except Exception:  # pylint: disable=broad-except
+                LOGGER.exception("Failed to send final-failure notification for %s", email)
+
+    results = [
+        {
+            "email": email,
+            "success": outcome.success if outcome else False,
+            "message": outcome.message if outcome else "처리되지 않음",
+            "targetDate": outcome.target_date.isoformat() if outcome else None,
+        }
+        for email, outcome in ((e, outcomes.get(e)) for e in emails)
+    ]
+
+    LOGGER.info("Worker completed after %d round(s): %s", round_num, results)
     return {"results": results}
 
 
