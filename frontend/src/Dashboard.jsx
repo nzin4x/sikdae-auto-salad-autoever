@@ -12,13 +12,19 @@ function isPast1PmKst() {
 export default function Dashboard({ email, onLogout }) {
   const [settings, setSettings] = useState(null)
   const [reservationInfo, setReservationInfo] = useState(null)
+  const [reservationLoading, setReservationLoading] = useState(true)
   const [message, setMessage] = useState(null)
   const [busy, setBusy] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
   function refresh() {
     api.getSettings(email).then(setSettings).catch((err) => setMessage({ type: 'error', text: err.message }))
-    api.checkReservation(email).then(setReservationInfo).catch((err) => setMessage({ type: 'error', text: err.message }))
+    setReservationLoading(true)
+    api
+      .checkReservation(email)
+      .then(setReservationInfo)
+      .catch((err) => setMessage({ type: 'error', text: err.message }))
+      .finally(() => setReservationLoading(false))
   }
 
   useEffect(refresh, [email])
@@ -101,7 +107,9 @@ export default function Dashboard({ email, onLogout }) {
       )}
 
       <div className="section-title">🍽️ 예약 현황</div>
-      {reservations.length > 0 ? (
+      {reservationLoading ? (
+        <div className="card muted center">⏳ 불러오는 중...</div>
+      ) : reservations.length > 0 ? (
         <div className="reservation-grid">
           {reservations.map((r) => (
             <div className="card reservation-card" key={r.date}>
@@ -120,7 +128,7 @@ export default function Dashboard({ email, onLogout }) {
         <button className="danger" onClick={handleCancel} disabled={busy}>❌ 가장 가까운 예약 취소</button>
       )}
 
-      {isPast1PmKst() && !hasNextWorkdayReservation && (
+      {!reservationLoading && isPast1PmKst() && !hasNextWorkdayReservation && (
         <button className="primary" onClick={handleImmediateReservation} disabled={busy}>
           {busy ? '⏳ 처리 중...' : '⚡ 즉시 예약 (다음 근무일)'}
         </button>
