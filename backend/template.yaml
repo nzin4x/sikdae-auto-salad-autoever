@@ -24,6 +24,15 @@ Parameters:
     Type: String
     NoEcho: true
     Description: Fernet key (Fernet.generate_key()) used to encrypt stored Mealc passwords. CloudFormation은 Lambda 환경변수에 SSM SecureString 동적참조를 지원하지 않으므로 배포 시 --parameter-overrides로 직접 주입한다.
+  VapidPrivateKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Web Push VAPID private key (base64url, py_vapid로 생성). CryptoKey와 동일하게 --parameter-overrides로 주입한다.
+  VapidSubject:
+    Type: String
+    Default: "mailto:no-reply@nz.pe.kr"
+    Description: "Web Push VAPID claims의 sub 값(mailto 또는 https URL)."
 
 Globals:
   Function:
@@ -41,6 +50,8 @@ Globals:
         MAX_USERS: !Ref MaxUsers
         PAGE_URL: !Ref PageUrl
         CRYPTO_KEY: !Ref CryptoKey
+        VAPID_PRIVATE_KEY: !Ref VapidPrivateKey
+        VAPID_SUBJECT: !Ref VapidSubject
     Tracing: Active
   Api:
     Cors:
@@ -143,6 +154,9 @@ Resources:
         GetStats:
           Type: Api
           Properties: { Path: /stats, Method: GET }
+        PushSubscribe:
+          Type: Api
+          Properties: { Path: /user/push-subscribe, Method: POST }
 
   WorkerFunction:
     Type: AWS::Serverless::Function

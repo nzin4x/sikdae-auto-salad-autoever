@@ -218,6 +218,33 @@ class ConfigStore:
             raise RuntimeError(f"Failed to remove device for {email}: {error}") from error
         return "Attributes" in response
 
+    # ---- 웹 푸시 구독(PK=USER#{email}, SK=PUSH#{fingerprint}) ----
+
+    def save_push_subscription(self, email: str, fingerprint: str, subscription: Dict[str, Any], platform: str) -> None:
+        self._table.put_item(
+            Item={
+                "PK": f"USER#{email}",
+                "SK": f"PUSH#{fingerprint}",
+                "endpoint": subscription["endpoint"],
+                "keys": subscription["keys"],
+                "platform": platform,
+                "registeredAt": datetime.utcnow().isoformat(),
+            }
+        )
+
+    def list_push_subscriptions(self, email: str, platform: Optional[str] = None) -> List[Dict[str, Any]]:
+        response = self._table.query(
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+            ExpressionAttributeValues={":pk": f"USER#{email}", ":sk": "PUSH#"},
+        )
+        items = response.get("Items", [])
+        if platform:
+            items = [i for i in items if i.get("platform") == platform]
+        return items
+
+    def delete_push_subscription(self, email: str, fingerprint: str) -> None:
+        self._table.delete_item(Key={"PK": f"USER#{email}", "SK": f"PUSH#{fingerprint}"})
+
     # ---- 이메일 인증코드(PK=VERIFY#{email}, SK=CODE) ----
 
     def save_verification_code(self, email: str, code: str, ttl_minutes: int = 10) -> None:

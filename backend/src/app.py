@@ -44,6 +44,7 @@ def api_handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         "/reservation/make-immediate": ("immediate_reservation", "immediate_reservation_handler"),
         "/reservation/cancel": ("cancel_reservation", "cancel_reservation_handler"),
         "/stats": ("get_stats", "get_stats_handler"),
+        "/user/push-subscribe": ("push_subscribe", "push_subscribe_handler"),
     }
 
     if route == "/admin/update-holidays":

@@ -9,7 +9,7 @@ function isPast1PmKst() {
   return kst.getHours() >= 13
 }
 
-export default function Dashboard({ email, onLogout }) {
+export default function Dashboard({ email, fingerprint, onLogout }) {
   const [settings, setSettings] = useState(null)
   const [reservationInfo, setReservationInfo] = useState(null)
   const [reservationLoading, setReservationLoading] = useState(true)
@@ -146,6 +146,7 @@ export default function Dashboard({ email, onLogout }) {
       {showSettings && (
         <Settings
           email={email}
+          fingerprint={fingerprint}
           onClose={() => setShowSettings(false)}
           onSaved={() => {
             setShowSettings(false)

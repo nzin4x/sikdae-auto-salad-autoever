@@ -22,7 +22,7 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 sam deploy \
   --stack-name sikdae-auto \
   --s3-bucket sikdae-auto-sam-artifacts-074789808615 \
   --capabilities CAPABILITY_IAM \
-  --parameter-overrides SesSenderEmail=no-reply@nz.pe.kr CryptoKey=<Fernet key> \
+  --parameter-overrides SesSenderEmail=no-reply@nz.pe.kr CryptoKey=<Fernet key> VapidPrivateKey=<VAPID private key> \
   --no-confirm-changeset \
   --region ap-northeast-2
 ```
@@ -32,6 +32,21 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 sam deploy \
   - **`backend/.crypto-key.local`**(gitignore됨)에 고정값을 보관하고, 배포 시 `CryptoKey=$(cat backend/.crypto-key.local)`로 항상 동일하게 넘겨야 한다. 이 값이 바뀌면 기존에 암호화 저장된 모든 회원의 식권대장 비밀번호를 복호화할 수 없게 된다(실제로 두 번 실수로 값이 바뀌어 테스트 계정을 재가입해야 했음).
 - 최초 배포 시 SAM 관리형 S3 버킷(`aws-sam-cli-managed-default`)이 이 계정에서 예전에 생성됐다가 버킷 자체는 삭제된 상태라 `--resolve-s3`가 실패했음 → 별도 버킷(`sikdae-auto-sam-artifacts-074789808615`)을 만들어 `--s3-bucket`으로 명시.
 - `HolidayApiKey`는 data.go.kr 서비스키를 `--parameter-overrides HolidayApiKey=...`로 주입 완료.
+
+## Web Push(VAPID) 키 설정
+Android 기기에서 예약 결과를 웹 푸시로도 받을 수 있도록 `WorkerFunction`/`ApiFunction`이 VAPID 비밀키로 서명해 브라우저 푸시 서비스에 발송한다(`backend/src/core/push_notifier.py`).
+
+1. 키 쌍 생성(1회만, `pywebpush`가 의존하는 `py-vapid` 사용):
+   ```bash
+   pip install py-vapid
+   vapid --gen
+   # ./private_key.pem, ./public_key.pem 생성됨 → 아래로 base64url 인코딩된 값 추출
+   python -c "from py_vapid import Vapid; v=Vapid.from_file('private_key.pem'); print(v.private_pem())"
+   ```
+   또는 `pywebpush`가 제공하는 `vapid.py` 유틸로 base64url 인코딩된 private key/public key 문자열을 바로 얻어도 된다.
+2. **`backend/.vapid-private-key.local`**(gitignore됨)에 private key 고정값을 보관 — `CryptoKey`와 동일하게, 이 값이 바뀌면 기존에 저장된 모든 구독이 무효화된다(재구독 필요).
+3. 배포 시 `--parameter-overrides`에 `VapidPrivateKey=$(cat backend/.vapid-private-key.local)` 추가.
+4. Public key는 비밀이 아니므로 프론트엔드 빌드 환경변수 `frontend/.env`(또는 Cloudflare Pages 빌드 환경변수)의 `VITE_VAPID_PUBLIC_KEY`에 넣는다.
 
 ## ⚠️ curl 테스트 시 주의 (Windows/Git-Bash 인코딩 문제)
 Windows Git-Bash(cp949 콘솔) 환경에서 curl `-d '{...한글...}'` 처럼 **한글을 커맨드라인 인자에 직접 넣으면 실제로 바이트가 깨져서 DynamoDB에 손상된 데이터(유니코드 replacement character, U+FFFD)가 저장되는 사고가 실제로 발생했다** (터미널에 안 예쁘게 보이는 정도가 아니라 진짜 데이터 손상). 한글이 포함된 요청은 반드시 JSON 파일로 작성해서 `curl --data-binary "@file.json"`으로 보낼 것.

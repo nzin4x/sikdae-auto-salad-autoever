@@ -23,6 +23,7 @@ def get_user_settings_handler(event: Dict[str, Any], _context: Any) -> Dict[str,
 
         config_store = ConfigStore()
         preferences = config_store.get_user_preferences(email)
+        push_subscribed = bool(config_store.list_push_subscriptions(email, platform="android"))
         return _response(
             200,
             {
@@ -33,6 +34,7 @@ def get_user_settings_handler(event: Dict[str, Any], _context: Any) -> Dict[str,
                 "exclusionDates": preferences.exclusion_dates,
                 "isActive": preferences.is_active,
                 "lastReservedDate": preferences.last_reserved_date,
+                "pushSubscribed": push_subscribed,
             },
         )
     except KeyError:

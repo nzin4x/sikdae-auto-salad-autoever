@@ -6,7 +6,7 @@ import logging
 import os
 from typing import Any, Dict
 
-from core import ConfigStore, HolidayService, ReservationService, SesNotifier
+from core import ConfigStore, HolidayService, PushNotifier, ReservationService, SesNotifier
 from lambda_http import json_response as _response
 from lambda_http import parse_body as _parse_body
 
@@ -50,5 +50,12 @@ def _build_service() -> ReservationService:
     )
     holiday_service = HolidayService(endpoint=holiday_endpoint, config_store=config_store)
     notifier = SesNotifier() if os.environ.get("SES_SENDER_EMAIL") else None
+    push_notifier = PushNotifier() if os.environ.get("VAPID_PRIVATE_KEY") else None
     timezone = os.environ.get("DEFAULT_TIMEZONE", "Asia/Seoul")
-    return ReservationService(config_store=config_store, holiday_service=holiday_service, notifier=notifier, timezone=timezone)
+    return ReservationService(
+        config_store=config_store,
+        holiday_service=holiday_service,
+        notifier=notifier,
+        push_notifier=push_notifier,
+        timezone=timezone,
+    )

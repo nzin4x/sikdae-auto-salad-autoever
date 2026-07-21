@@ -113,7 +113,7 @@ export default function App() {
         <Register email={email} fingerprint={fingerprint} onDone={() => setStage('dashboard')} />
       )}
 
-      {stage === 'dashboard' && <Dashboard email={email} onLogout={handleLogout} />}
+      {stage === 'dashboard' && <Dashboard email={email} fingerprint={fingerprint} onLogout={handleLogout} />}
 
       <footer className="app-footer">
         <a href="https://github.com/nzin4x/sikdae-auto-salad-autoever" target="_blank" rel="noopener noreferrer">

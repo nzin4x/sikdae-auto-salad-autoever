@@ -2,7 +2,17 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import Calendar from './Calendar'
 
-export default function Settings({ email, onClose, onSaved }) {
+const isAndroid = /android/i.test(navigator.userAgent)
+const supportsPush = 'serviceWorker' in navigator && 'PushManager' in window
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = atob(base64)
+  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)))
+}
+
+export default function Settings({ email, fingerprint, onClose, onSaved }) {
   const [menuPreference, setMenuPreference] = useState([])
   const [deliverySpotKeyword, setDeliverySpotKeyword] = useState('')
   const [mealcUserId, setMealcUserId] = useState('')
@@ -11,6 +21,8 @@ export default function Settings({ email, onClose, onSaved }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [pushSubscribed, setPushSubscribed] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
 
   useEffect(() => {
     api
@@ -19,10 +31,33 @@ export default function Settings({ email, onClose, onSaved }) {
         setMenuPreference(s.menuPreference || [])
         setDeliverySpotKeyword(s.deliverySpotKeyword || '')
         setExclusionDates(s.exclusionDates || [])
+        setPushSubscribed(Boolean(s.pushSubscribed))
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [email])
+
+  async function handlePushSubscribe() {
+    setError('')
+    setPushBusy(true)
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js')
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') {
+        throw new Error('알림 권한이 허용되지 않았습니다')
+      }
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(import.meta.env.VITE_VAPID_PUBLIC_KEY),
+      })
+      await api.pushSubscribe(email, fingerprint, subscription.toJSON(), 'android')
+      setPushSubscribed(true)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setPushBusy(false)
+    }
+  }
 
   function moveMenu(index, direction) {
     setMenuPreference((prev) => {
@@ -109,6 +144,15 @@ export default function Settings({ email, onClose, onSaved }) {
               ⚠️ 서버 관리자는 암호화 키로 언제든 복호화할 수 있습니다. 노출되어도 무방한 비밀번호를 사용하세요.
               <br />⚠️ 자동 예약이 실행될 시, 기존 식권대장 앱의 로그인 세션은 비활성화됩니다.
             </p>
+
+            {isAndroid && supportsPush && (
+              <>
+                <label>🔔 푸시 알림</label>
+                <button type="button" onClick={handlePushSubscribe} disabled={pushSubscribed || pushBusy}>
+                  {pushSubscribed ? '🔔 푸시 알림 켜짐' : pushBusy ? '⏳ 등록 중...' : '🔔 푸시 알림 받기'}
+                </button>
+              </>
+            )}
 
             <label>📅 제외일 (휴가 등 예약 안 할 날 — 달력에서 날짜를 눌러 선택/해제)</label>
             <Calendar selectedDates={exclusionDates} onToggleDate={toggleExclusionDate} />

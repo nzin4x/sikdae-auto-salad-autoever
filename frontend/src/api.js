@@ -35,4 +35,9 @@ export const api = {
     request('/reservation/make-immediate', { method: 'POST', body: JSON.stringify({ email }) }),
   cancelReservation: (email) => request('/reservation/cancel', { method: 'POST', body: JSON.stringify({ email }) }),
   getStats: () => request('/stats'),
+  pushSubscribe: (email, deviceFingerprint, subscription, platform) =>
+    request('/user/push-subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ email, deviceFingerprint, subscription, platform }),
+    }),
 }

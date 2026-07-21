@@ -13,6 +13,7 @@ from .config_store import ConfigStore
 from .holiday_service import HolidayService
 from .mealc_client import MealcClient
 from .models import ReservationAttempt, UserPreferences
+from .push_notifier import PushNotifier
 from .ses_notifier import SesNotifier
 
 
@@ -40,11 +41,13 @@ class ReservationService:
         config_store: ConfigStore,
         holiday_service: Optional[HolidayService] = None,
         notifier: Optional[SesNotifier] = None,
+        push_notifier: Optional[PushNotifier] = None,
         timezone: str = "Asia/Seoul",
     ) -> None:
         self.config_store = config_store
         self.holiday_service = holiday_service
         self.notifier = notifier
+        self.push_notifier = push_notifier
         self.timezone = timezone
 
     def run(
@@ -186,20 +189,35 @@ class ReservationService:
         return candidate
 
     def _notify(self, preferences: UserPreferences, attempt: ReservationAttempt) -> None:
-        if not self.notifier or not preferences.notification_emails:
-            return
         weekday_kr = ["월", "화", "수", "목", "금", "토", "일"][attempt.target_date.weekday()]
         status_str = "성공" if attempt.success else "실패"
         subject = f"[식대오토샐러드] {attempt.target_date.isoformat()}({weekday_kr}) 예약 {status_str}"
-        body_lines = [
-            f"예약 날짜: {attempt.target_date.isoformat()} ({weekday_kr})",
-            f"결과: {status_str}",
-            f"메시지: {attempt.message}",
-            "",
-            f"+ 식권대장 계정: {preferences.mealc_user_id}",
-            f"+ 선호 메뉴: {', '.join(preferences.menu_preference) or '(미설정)'}",
-            f"+ 배송지 키워드: {preferences.delivery_spot_keyword or '(미설정)'}",
-            "",
-            f"+ 예약 확인 및 설정: {PAGE_URL}",
-        ]
-        self.notifier.send(subject, "\n".join(body_lines), preferences.notification_emails)
+
+        if self.notifier and preferences.notification_emails:
+            body_lines = [
+                f"예약 날짜: {attempt.target_date.isoformat()} ({weekday_kr})",
+                f"결과: {status_str}",
+                f"메시지: {attempt.message}",
+                "",
+                f"+ 식권대장 계정: {preferences.mealc_user_id}",
+                f"+ 선호 메뉴: {', '.join(preferences.menu_preference) or '(미설정)'}",
+                f"+ 배송지 키워드: {preferences.delivery_spot_keyword or '(미설정)'}",
+                "",
+                f"+ 예약 확인 및 설정: {PAGE_URL}",
+            ]
+            self.notifier.send(subject, "\n".join(body_lines), preferences.notification_emails)
+
+        if self.push_notifier:
+            self._send_push(preferences, subject, attempt.message)
+
+    def _send_push(self, preferences: UserPreferences, title: str, body: str) -> None:
+        subscriptions = self.config_store.list_push_subscriptions(preferences.email, platform="android")
+        for item in subscriptions:
+            subscription_info = {"endpoint": item["endpoint"], "keys": item["keys"]}
+            try:
+                result = self.push_notifier.send(subscription_info, title, body, PAGE_URL)
+            except Exception:  # pylint: disable=broad-except
+                continue
+            if result.expired:
+                fingerprint = item["SK"].removeprefix("PUSH#")
+                self.config_store.delete_push_subscription(preferences.email, fingerprint)
