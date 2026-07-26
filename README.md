@@ -8,6 +8,19 @@
 
 식권대장은 공식 웹/오픈 API가 없는 네이티브 앱이라, mitmproxy + Frida(TrustManager 후킹)로 HTTPS 트래픽을 캡처해 API를 역공학해서 사용한다. 캡처/분석 내용은 [`docs/api_notes.md`](docs/api_notes.md) 참고.
 
+## 패킷 캡처(mitmproxy + Frida) 재현 방법
+
+API가 바뀌었거나 새 플로우를 분석해야 할 때 캡처를 다시 뜨는 절차. **Android 시스템 프록시 설정은 이
+MuMu 빌드에서 작동하지 않아서(가상 WiFi가 무시함) 쓰지 않는다** — 대신 mitmproxy WireGuard mode로
+기기 전체 트래픽을 강제 터널링하고, Frida로 TrustManagerImpl을 후킹해 인증서 신뢰 문제를 우회한다.
+
+전체 셋업 절차(왜 이 방법인지, 실패했던 다른 접근법들, 트러블슈팅 포함)는
+[`docs/android_debug_setup.md`](docs/android_debug_setup.md)에 정리되어 있다. Claude Code에게
+"안드로이드 디버깅 모드로 작동해줘"라고 하면 그 문서를 따라 환경을 재구성해준다(`CLAUDE.md` 참고).
+
+앱에서 재현하려는 동작(로그인/예약/취소 등)을 실행하면 `capture/*.mitm`에 그대로 쌓인다. 분석이 끝나면
+`docs/api_notes.md`를 갱신한다.
+
 ## 구성
 
 | 경로 | 내용 |
@@ -16,6 +29,9 @@
 | `frontend/` | Vite + React 19 모바일 대시보드 |
 | `docs/api_notes.md` | 역공학한 Mealc API 스펙 |
 | `docs/deployment.md` | 실제 배포 계정/스택 정보, 트러블슈팅 기록 |
+| `docs/android_debug_setup.md` | MuMu Player 안드로이드 디버깅(패킷 캡처) 환경 셋업 가이드 — 왜 이 방법인지 포함 |
+| `docs/frida_ssl_bypass.js` | TrustManagerImpl SSL 우회용 Frida 스크립트 |
+| `CLAUDE.md` | Claude Code용 프로젝트 지침 ("안드로이드 디버깅 모드로 작동해줘" 트리거 등) |
 | `test/` | 배포 시스템을 거치지 않고 Mealc API를 직접 호출하는 로컬 검증 스크립트 |
 | `capture/` | mitmproxy 캡처 파일 저장 위치 (gitignore) |
 

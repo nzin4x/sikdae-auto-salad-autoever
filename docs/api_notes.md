@@ -14,6 +14,10 @@
 - Android 15(APEX/Conscrypt Mainline)에서는 `/system/etc/security/cacerts`에 CA를 심어도(bind-mount, KernelSU 모듈 등) 반영되지 않음.
 - **Frida로 `com.android.org.conscrypt.TrustManagerImpl`의 `checkTrustedRecursive`/`verifyChain`을 후킹**해 항상 신뢰하도록 만드는 방식으로 우회 성공.
 - KernelSU 루트 + frida-server(x86_64, device abi 기준) + 범용 SSL bypass 스크립트 조합.
+- 프록시는 mitmproxy(mitmweb). **Android 시스템 전역 프록시 설정(`settings global http_proxy`)은 이 MuMu 빌드에서 실제 네트워크 스택(LinkProperties)에 반영되지 않아 작동하지 않는다** — 대신 mitmproxy `--mode wireguard`로 기기 전체 트래픽을 강제 터널링한다.
+- MuMu Player는 **브릿지 네트워크 모드**(`net_bridge_open: true`)로 설정되어 있어 에뮬레이터가 호스트와 같은 LAN에서 자체 IP를 DHCP로 받는다(NAT처럼 호스트 IP를 공유하지 않음).
+- `MuMuManager.exe`(`C:\Program Files\Netease\MuMuPlayer\nx_main\MuMuManager.exe`)의 `adb -v <idx> -c connect`는 `vm not ready` 에러로 실패하는 경우가 있었음 — 브릿지 모드에서는 게스트가 이미 실제 IP를 갖고 있으므로 표준 `adb connect <게스트IP>:5555`로 바로 붙이는 게 더 안정적.
+- 왜 이 방식인지(시행착오 포함)와 전체 재현 절차는 [`docs/android_debug_setup.md`](android_debug_setup.md) 참고. Frida SSL bypass 스크립트는 `docs/frida_ssl_bypass.js`에 커밋되어 있음.
 
 ## 공통 요청 헤더 (모든 API 호출)
 ```
