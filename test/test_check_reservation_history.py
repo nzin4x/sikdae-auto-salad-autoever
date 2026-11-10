@@ -12,6 +12,7 @@ from check_reservation import (  # noqa: E402
     booking_history_menu_states,
     booking_store_id_from_history,
     booked_menu_names,
+    next_workday_booked_item,
 )
 
 
@@ -115,3 +116,37 @@ def test_menu_flag_remains_as_legacy_fallback() -> None:
     assert booked_menu_names(
         _menu(("legacy", "기존 예약", True)), set(), set()
     ) == ["기존 예약"]
+
+
+def test_next_workday_uses_only_explicitly_booked_menu() -> None:
+    menu = _menu(
+        ("sandwich", "예약한 샌드위치", True),
+        ("salad", "예약 가능한 샐러드", False),
+        ("meal-set", "예약 가능한 세트", False),
+    )
+    active = {
+        "sandwich": _history("CONFIRM", "sandwich"),
+        "salad": _history("CONFIRM", "salad"),
+        "meal-set": _history("CONFIRM", "meal-set"),
+    }
+
+    item = next_workday_booked_item(menu, active)
+
+    assert item is not None
+    assert item["id"] == "sandwich"
+
+
+def test_next_workday_fallback_uses_only_newest_active_payment() -> None:
+    menu = _menu(
+        ("newest", "최신 예약", False),
+        ("older", "과거 결제 메뉴", False),
+    )
+    active = {
+        "newest": _history("CONFIRM", "newest"),
+        "older": _history("CONFIRM", "older"),
+    }
+
+    item = next_workday_booked_item(menu, active)
+
+    assert item is not None
+    assert item["id"] == "newest"

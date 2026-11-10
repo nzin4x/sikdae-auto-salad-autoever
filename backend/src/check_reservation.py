@@ -1,8 +1,8 @@
-"""다가오는 근무일들의 예약 상태 확인.
+"""다음 근무일의 예약 상태 확인.
 
 결제내역(pointbook)의 CONFIRM/CANCELED 상태를 예약 상태의 주 근거로 사용한다.
-pointbook의 useDate는 결제 시각이지 식사 예정일이 아니므로, 각 후보 날짜의 메뉴 ID와
-활성 결제내역의 orderedMenus.menuId를 교차 매칭해 날짜를 확정한다.
+pointbook의 useDate는 결제 시각이지 식사 예정일이 아니므로 과거 결제를 여러 미래 날짜로
+확장하지 않는다. 다음 근무일 메뉴의 booking.isBooked를 우선하고 최신 활성 결제를 보조로 쓴다.
 """
 
 from __future__ import annotations
@@ -29,9 +29,6 @@ LOGGER = logging.getLogger()
 if not LOGGER.handlers:
     logging.basicConfig(level=logging.INFO)
 LOGGER.setLevel(logging.INFO)
-
-DEFAULT_DAYS_AHEAD = 5
-
 
 def booking_history_menu_states(
     histories: Iterable[Dict[str, Any]], store_id: str
@@ -105,14 +102,43 @@ def booked_menu_items(
     return items
 
 
+def next_workday_booked_item(
+    menu_response: Dict[str, Any],
+    active_histories: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any] | None:
+    """Return at most one confirmed menu for the next workday.
+
+    The menu API's ``booking.isBooked`` is authoritative.  The newest active
+    pointbook entry is only a fallback because older payment menu IDs can recur
+    in later menus and must never mark several future dates as confirmed.
+    """
+    contents = all_menu_contents(menu_response)
+    explicitly_booked = next(
+        (
+            item
+            for item in contents
+            if bool((item.get("booking") or {}).get("isBooked"))
+        ),
+        None,
+    )
+    if explicitly_booked:
+        return explicitly_booked
+
+    contents_by_id = {
+        str(item.get("id")): item for item in contents if item.get("id")
+    }
+    for menu_id in active_histories:
+        if menu_id in contents_by_id:
+            return contents_by_id[menu_id]
+    return None
+
+
 def check_reservation_handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     try:
         body = _parse_body(event)
         email = body.get("email")
         if not email:
             return _response(400, {"message": "email is required"})
-        days_ahead = int(body.get("daysAhead", DEFAULT_DAYS_AHEAD))
-
         config_store = ConfigStore()
         preferences = config_store.get_user_preferences(email)
 
@@ -148,77 +174,51 @@ def check_reservation_handler(event: Dict[str, Any], _context: Any) -> Dict[str,
         if not store_id:
             return _response(404, {"message": "배달식사 매장을 찾지 못함"})
 
-        try:
-            confirmed_menu_ids, canceled_menu_ids = booking_history_menu_states(
-                histories, store_id
-            )
-        except Exception:
-            LOGGER.exception("Failed to parse pointbook; falling back to menu booking flags")
-            confirmed_menu_ids, canceled_menu_ids = set(), set()
-
         active_histories = active_booking_menu_histories(histories, store_id)
-        cancelable_menu_ids: Set[str] = set()
-        detail_cache: Dict[str, Dict[str, Any]] = {}
-        for menu_id, history in active_histories.items():
-            coupon_id = history.get("couponId")
-            if not coupon_id:
-                continue
-            try:
-                if coupon_id not in detail_cache:
-                    detail_cache[coupon_id] = client.get_pointbook_detail(coupon_id)
-                history_info = detail_cache[coupon_id].get("historyInfo") or {}
-                if history_info.get("isCancelable") is True and history_info.get("historyIdx"):
-                    cancelable_menu_ids.add(menu_id)
-            except Exception:  # pylint: disable=broad-except
-                LOGGER.exception("Failed to load cancelability for coupon %s", coupon_id)
-
         LOGGER.info(
-            "Reservation history state loaded: confirmed=%d canceled=%d",
-            len(confirmed_menu_ids),
-            len(canceled_menu_ids),
+            "Reservation history state loaded: active=%d",
+            len(active_histories),
         )
 
-        candidates = []
-        if today.weekday() < 5 and not holiday_service.is_holiday(today, holiday_api_key):
-            candidates.append(today)
-        cursor = today
-        while len(candidates) < days_ahead:
-            cursor = holiday_service.next_workday(cursor, holiday_api_key)
-            candidates.append(cursor)
-
         reservations = []
-        for candidate in candidates:
-            menu_response = client.get_store_menu(store_id, candidate.strftime("%Y-%m-%d"))
-            booked_items = booked_menu_items(
-                menu_response, confirmed_menu_ids, canceled_menu_ids
+        menu_response = client.get_store_menu(store_id, next_workday.isoformat())
+        booked_item = next_workday_booked_item(menu_response, active_histories)
+        if booked_item:
+            menu_id = str(booked_item.get("id") or "")
+            is_cancelable = False
+            history = active_histories.get(menu_id)
+            coupon_id = history.get("couponId") if history else None
+            if coupon_id:
+                try:
+                    history_info = (
+                        client.get_pointbook_detail(coupon_id).get("historyInfo") or {}
+                    )
+                    is_cancelable = bool(
+                        history_info.get("isCancelable") is True
+                        and history_info.get("historyIdx")
+                    )
+                except Exception:  # pylint: disable=broad-except
+                    LOGGER.exception(
+                        "Failed to load cancelability for coupon %s", coupon_id
+                    )
+
+            reservations.append(
+                {
+                    "date": next_workday.isoformat(),
+                    "label": "다음 근무일",
+                    "status": "CONFIRMED",
+                    "statusLabel": "예약 확정",
+                    "isCancelable": is_cancelable,
+                    "menus": [booked_item.get("name", "")],
+                }
             )
-            if booked_items:
-                if candidate == today:
-                    label = "오늘"
-                elif candidate == next_workday:
-                    label = "다음 근무일"
-                else:
-                    label = "예약 예정"
-                is_cancelable = any(
-                    item["id"] in cancelable_menu_ids for item in booked_items
-                )
-                reservations.append(
-                    {
-                        "date": candidate.isoformat(),
-                        "label": label,
-                        "status": "CONFIRMED",
-                        "statusLabel": "예약 확정",
-                        "isCancelable": is_cancelable,
-                        "menus": [item["name"] for item in booked_items],
-                    }
-                )
 
         return _response(
             200,
             {
                 "email": email,
                 "nextWorkday": next_workday.isoformat(),
-                "hasNextWorkdayReservation": any(r["date"] == next_workday.isoformat() for r in reservations),
+                "hasNextWorkdayReservation": bool(reservations),
                 "hasCancelableReservation": any(r["isCancelable"] for r in reservations),
                 "reservations": reservations,
             },
