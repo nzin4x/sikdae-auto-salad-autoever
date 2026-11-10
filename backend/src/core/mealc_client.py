@@ -123,11 +123,16 @@ class MealcClient:
 
     def find_booking_store_id(self) -> Optional[str]:
         """배달식사(BOOKING) 매장 id를 자동으로 찾는다. 여러 개면 첫 번째를 반환."""
-        stores = self.get_store_list().get("stores", [])
-        for store in stores:
-            if any(t.get("code") == "BOOKING" for t in store.get("supplyTypes", [])):
-                return store["id"]
-        return None
+        store_ids = self.find_booking_store_ids()
+        return store_ids[0] if store_ids else None
+
+    def find_booking_store_ids(self) -> list[str]:
+        """Return every BOOKING store id in the account-provided display order."""
+        return [
+            store["id"]
+            for store in self.get_store_list().get("stores", [])
+            if any(t.get("code") == "BOOKING" for t in store.get("supplyTypes", []))
+        ]
 
     def get_account_policy(self) -> Dict[str, Any]:
         """유저 정보(이름) 및 식대 정책 id(policy.day[0].id) 조회."""

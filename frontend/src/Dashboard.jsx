@@ -87,6 +87,7 @@ export default function Dashboard({ email, fingerprint, onLogout }) {
 
   const reservations = reservationInfo?.reservations || []
   const hasNextWorkdayReservation = reservationInfo?.hasNextWorkdayReservation || false
+  const hasCancelableReservation = reservationInfo?.hasCancelableReservation || false
 
   return (
     <div>
@@ -113,10 +114,14 @@ export default function Dashboard({ email, fingerprint, onLogout }) {
         <div className="reservation-grid">
           {reservations.map((r) => (
             <div className="card reservation-card" key={r.date}>
-              <span className={`badge ${r.label === '오늘' ? 'badge-today' : 'badge-upcoming'}`}>
-                {r.label === '오늘' ? '📌' : '🗓️'} {r.label} ({r.date})
-              </span>
+              <div className="reservation-badges">
+                <span className={`badge ${r.label === '오늘' ? 'badge-today' : 'badge-upcoming'}`}>
+                  {r.label === '오늘' ? '📌' : '🗓️'} {r.label} ({r.date})
+                </span>
+                <span className="badge badge-confirmed">✅ {r.statusLabel || '예약 확정'}</span>
+              </div>
               <div className="card-title">{r.menus.join(', ')}</div>
+              {r.isCancelable && <div className="reservation-cancelable">취소 가능</div>}
             </div>
           ))}
         </div>
@@ -124,7 +129,7 @@ export default function Dashboard({ email, fingerprint, onLogout }) {
         <div className="card muted center">🈳 예약 내역이 없습니다</div>
       )}
 
-      {reservations.length > 0 && (
+      {hasCancelableReservation && (
         <button className="danger" onClick={handleCancel} disabled={busy}>❌ 가장 가까운 예약 취소</button>
       )}
 

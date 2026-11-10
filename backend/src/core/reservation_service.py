@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Optional
@@ -9,12 +10,24 @@ from typing import Any, Dict, Optional
 import pytz
 
 from .branding import PAGE_URL
+from .booking_history import booking_store_id_from_history
 from .config_store import ConfigStore
 from .holiday_service import HolidayService
 from .mealc_client import MealcClient
 from .models import ReservationAttempt, UserPreferences
 from .push_notifier import PushNotifier
 from .ses_notifier import SesNotifier
+
+LOGGER = logging.getLogger(__name__)
+
+
+def all_menu_contents(menu_response: Dict[str, Any]) -> list:
+    """Return every menu item regardless of the UI category layout."""
+    return [
+        item
+        for section in menu_response.get("menus", [])
+        for item in section.get("contents", [])
+    ]
 
 
 def regular_menu_contents(menu_response: Dict[str, Any]) -> list:
@@ -33,6 +46,35 @@ def regular_menu_contents(menu_response: Dict[str, Any]) -> list:
         menu_sections[0],
     )
     return regular_section.get("contents", [])
+
+
+def preferred_menu_contents(menu_response: Dict[str, Any], keywords: list[str]) -> list:
+    """Find the booking artifact that contains a preferred menu item.
+
+    Special-event days can reorder or rename the UI categories, so category names and
+    array positions are not a reliable boundary.  Items that can be booked together
+    share ``booking.artifactIdx``.  Locate the artifact from the user's preferred menu
+    name and return only that artifact's items, excluding an unrelated cake/event
+    artifact even when it is displayed first or is already booked.
+    """
+    contents = all_menu_contents(menu_response)
+    if not keywords:
+        return regular_menu_contents(menu_response)
+
+    for keyword in keywords:
+        preferred_artifact_ids = {
+            item.get("booking", {}).get("artifactIdx")
+            for item in contents
+            if keyword in item.get("name", "")
+            and item.get("booking", {}).get("artifactIdx") is not None
+        }
+        if preferred_artifact_ids:
+            return [
+                item
+                for item in contents
+                if item.get("booking", {}).get("artifactIdx") in preferred_artifact_ids
+            ]
+    return []
 
 
 class ReservationService:
@@ -81,26 +123,104 @@ class ReservationService:
                 self._notify(preferences, attempt)
             return attempt
 
-        store_id = preferences.store_id or client.find_booking_store_id()
-        if not store_id:
+        date_str = target_date.strftime("%Y-%m-%d")
+        keywords = preferences.menu_preference or [""]
+
+        if preferences.store_id:
+            candidate_store_ids = [preferences.store_id]
+        else:
+            histories = []
+            try:
+                history_start = (datetime.now(tz).date() - timedelta(days=30)).isoformat()
+                histories = client.get_pointbook_list(
+                    history_start,
+                    datetime.now(tz).date().isoformat(),
+                    page=1,
+                    page_row=100,
+                ).get("histories", [])
+            except Exception:  # pylint: disable=broad-except
+                LOGGER.exception("Failed to load pointbook while selecting booking store")
+
+            history_store_id = booking_store_id_from_history(histories)
+            discovered_store_ids = client.find_booking_store_ids()
+            candidate_store_ids = list(
+                dict.fromkeys(
+                    store_id
+                    for store_id in [history_store_id, *discovered_store_ids]
+                    if store_id
+                )
+            )
+
+        if not candidate_store_ids:
             attempt = ReservationAttempt(False, "배달식사 매장을 찾지 못함", target_date, retryable=True)
             if notify_on_retryable_failure:
                 self._notify(preferences, attempt)
             return attempt
 
-        date_str = target_date.strftime("%Y-%m-%d")
-        menu_response = client.get_store_menu(store_id, date_str)
-        contents = regular_menu_contents(menu_response)
+        store_id = None
+        menu_response: Dict[str, Any] = {}
+        contents = []
+        inspected_menus = []
+        for candidate_store_id in candidate_store_ids:
+            candidate_menu = client.get_store_menu(candidate_store_id, date_str)
+            inspected_menus.append((candidate_store_id, candidate_menu))
+            candidate_contents = preferred_menu_contents(candidate_menu, keywords)
+            if candidate_contents:
+                store_id = candidate_store_id
+                menu_response = candidate_menu
+                contents = candidate_contents
+                break
 
-        if not contents:
+        if not any(all_menu_contents(response) for _, response in inspected_menus):
             # 정각 직후엔 당일 메뉴가 아직 게시되지 않은 경우가 있어 재시도 대상으로 취급한다.
             attempt = ReservationAttempt(False, f"{date_str} 메뉴 없음", target_date, retryable=True)
             if notify_on_retryable_failure:
                 self._notify(preferences, attempt)
             return attempt
 
-        # 특식/이벤트 메뉴(별도 카테고리 섹션)는 여기서 제외된다 — 특식만 예약되어 있어도
-        # 일반(점심) 메뉴는 별도의 추가 예약으로 취급해 정상 진행해야 한다(hgreenfood-auto-salad 원본과 동일한 정책).
+        if not store_id or not contents:
+            # Event/pre-order items can be published before the regular lunch section.
+            # Treat that partial layout as temporary so the worker's exponential
+            # backoff keeps checking until sandwiches/salads are published.
+            has_lunch_section = any(
+                "점심" in (section.get("category") or {}).get("name", "")
+                for _, response in inspected_menus
+                for section in response.get("menus", [])
+            )
+            LOGGER.warning(
+                "No preferred menu artifact for %s: preferences=%s, retryable=%s, stores=%s",
+                date_str,
+                keywords,
+                not has_lunch_section,
+                [
+                    {
+                        "storeId": candidate_store_id,
+                        "menuLayout": [
+                            {
+                                "category": section.get("category", {}).get("name", ""),
+                                "items": [
+                                    item.get("name", "")
+                                    for item in section.get("contents", [])
+                                ],
+                            }
+                            for section in response.get("menus", [])
+                        ],
+                    }
+                    for candidate_store_id, response in inspected_menus
+                ],
+            )
+            attempt = ReservationAttempt(
+                False,
+                "선호 메뉴 중 예약 가능한 항목이 없음",
+                target_date,
+                retryable=not has_lunch_section,
+            )
+            if notify_on_retryable_failure or not attempt.retryable:
+                self._notify(preferences, attempt)
+            return attempt
+
+        # 같은 artifactIdx의 메뉴만 동일 예약 묶음이다. 별도 artifact인 케이크 특식이
+        # 예약되어 있어도 샌드위치/샐러드 점심 예약은 계속 진행한다.
         if any(item.get("booking", {}).get("isBooked") for item in contents):
             attempt = ReservationAttempt(True, "이미 예약되어 있음", target_date, details={"alreadyBooked": True})
             self._notify(preferences, attempt)
@@ -108,7 +228,6 @@ class ReservationService:
 
         attempted = []
         last_error_message = None
-        keywords = preferences.menu_preference or [""]
         for keyword in keywords:
             matched = next((item for item in contents if keyword in item.get("name", "")), None)
             if not matched:

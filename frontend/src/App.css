@@ -214,6 +214,18 @@ button.danger {
   margin-bottom: 8px;
 }
 
+.reservation-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.reservation-badges .badge {
+  margin-bottom: 0;
+}
+
 .badge-today {
   background: #e3f2fd;
   color: #1976d2;
@@ -222,6 +234,18 @@ button.danger {
 .badge-upcoming {
   background: #f3e5f5;
   color: #7b1fa2;
+}
+
+.badge-confirmed {
+  background: #e8f5e9;
+  color: var(--success);
+}
+
+.reservation-cancelable {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .error {
